@@ -1,6 +1,8 @@
 package net.jadler;
 
+import net.jadler.httpmocker.HttpMocker;
 import net.jadler.portallocator.PortAllocator;
+import org.apache.commons.lang.Validate;
 import org.junit.Assert;
 import org.junit.rules.ExternalResource;
 import org.slf4j.Logger;
@@ -22,6 +24,7 @@ public class JadlerRule extends ExternalResource {
 
     private final int mockerPort;
     private Jadler.OngoingConfiguration ongoingConfiguration;
+    private HttpMocker httpMocker;
 
 
     /**
@@ -46,7 +49,34 @@ public class JadlerRule extends ExternalResource {
     }
 
 
-    //---------------------------- PUBLIC METHODS ----------------------------------------------------------------------
+    //---------------------------- PUBLIC STUFF ------------------------------------------------------------------------
+    public static interface JadlerConfiguration {
+        /**
+         * Client should perform all specific configuration of {@link HttpMocker} in this method.
+         * @param ongoingConfiguration
+         */
+        void configure(OngoingConfiguration ongoingConfiguration);
+
+        /**
+         * Client should perform all specific configuration of {@link HttpMocker} in this method.
+         * @param mocker
+         */
+        void configureMocker(HttpMocker mocker);
+    }
+
+    /**
+     * Default empty implementation of {@link JadlerConfiguration}.
+     * Client can extend this class instead of direct implementation of {@link JadlerConfiguration}
+     * when it does not want to implement all methods. E.g. in many cases it is sufficient to implement
+     * only {@link JadlerConfiguration#configureMocker(net.jadler.httpmocker.HttpMocker)} method.
+     */
+    public static class JadlerConfigurationAdapter implements JadlerConfiguration {
+        @Override
+        public void configure(OngoingConfiguration ongoingConfiguration) { }
+
+        @Override
+        public void configureMocker(HttpMocker mocker) { }
+    }
 
     /**
      * @return port on which the jadler mocker server is listening.
@@ -54,16 +84,6 @@ public class JadlerRule extends ExternalResource {
     public int getMockerPort() {
         return mockerPort;
     }
-
-
-    /**
-     * Client can use this method to retrieve ongoing configuration of mocker server and for test specific configuration.
-     * @return ongoing configuration of Jadler initialized in {@link #before()} method.
-     */
-    public OngoingConfiguration getOngoingConfiguration() {
-        return ongoingConfiguration;
-    }
-
 
 
     //---------------------------- LIFECYCLE JUNIT RULE  METHODS -------------------------------------------------------
@@ -74,7 +94,30 @@ public class JadlerRule extends ExternalResource {
      */
     @Override
     protected void before() throws Throwable {
-        startMocker();
+        ongoingConfiguration = createConfiguration();
+    }
+
+    public void startMocker(JadlerConfiguration configurationCallback) {
+        if (configurationCallback != null) {
+            // perform client specific configuration
+            configurationCallback.configure(ongoingConfiguration);
+        }
+
+        final HttpMocker mocker = ongoingConfiguration.build();
+
+        if (configurationCallback != null) {
+            // perform client specific configuration
+            configurationCallback.configureMocker(mocker);
+        }
+
+        try {
+            mocker.start();
+            httpMocker = mocker;
+            logger.debug("HTTP mocker has been started on port=", getMockerPort());
+        } catch (Exception e) {
+            logger.error("Cannot start mocker on port=" + getMockerPort(), e);
+            Assert.fail("Cannot start mocker on port=" + getMockerPort());
+        }
     }
 
     /**
@@ -87,22 +130,17 @@ public class JadlerRule extends ExternalResource {
 
 
     //-------------------------------------- PRIVATE METHODS -----------------------------------------------------------
-    private void startMocker() {
-        try {
-            ongoingConfiguration = initJadlerThat().usesStandardServerListeningOn(mockerPort);
-            startStubServer();
-            logger.debug("HTTP mocker has been started on port=", getMockerPort());
-        } catch (Exception e) {
-            logger.error("Cannot start mocker on port=" + getMockerPort(), e);
-            Assert.fail("Cannot start mocker on port=" + getMockerPort());
-        }
-    }
 
+    private OngoingConfiguration createConfiguration() {
+        return new OngoingConfiguration().usesStandardServerListeningOn(mockerPort);
+    }
 
     private void stopMocker() {
         try {
-            stopStubServer();
-            logger.debug("HTTP mocker on port={} has been stopped.", getMockerPort());
+            if (httpMocker != null && httpMocker.isStarted()) {
+                httpMocker.stop();
+                logger.debug("HTTP mocker on port={} has been stopped.", getMockerPort());
+            }
         } catch (Exception e) {
             logger.warn("Cannot stop HTTP mocker on port=" + getMockerPort(), e);
         }

@@ -198,7 +198,7 @@ public final class Jadler {
         /**
          * @return a newly constructed HttpMocker instance.
          */
-        private HttpMocker build() {
+        public HttpMocker build() {
             final HttpMockerImpl res = new HttpMockerImpl(this.mockHttpServer);
             this.mockHttpServer.registerResponseProvider(res);
 
