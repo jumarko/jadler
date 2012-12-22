@@ -4,8 +4,6 @@ import net.jadler.httpmocker.HttpMocker;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpStatus;
 import org.apache.commons.httpclient.methods.GetMethod;
-import org.apache.commons.httpclient.methods.PostMethod;
-import org.apache.commons.httpclient.params.HttpClientParams;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -26,10 +24,16 @@ public class JadlerRuleTest {
             new JadlerRule.JadlerConfigurationAdapter();
 
     @Rule
-    public JadlerRule jadlerRuleForExplicitPort = new JadlerRule(PORT);
+    public JadlerRule jadlerRuleForExplicitPort = new JadlerRule.Builder().withMockerPort(PORT).createJadlerRule();
 
     @Rule
-    public JadlerRule jadlerRule = new JadlerRule();
+    public JadlerRule jadlerRule = new JadlerRule.Builder().withCommonConfiguration(new JadlerRule.JadlerConfigurationAdapter() {
+        @Override
+        public void configure(Jadler.OngoingConfiguration ongoingConfiguration) {
+            ongoingConfiguration.respondsWithDefaultStatus(HttpStatus.SC_CREATED);
+        }
+    })
+    .createJadlerRule();
 
 
     @Test
@@ -58,12 +62,6 @@ public class JadlerRuleTest {
     @Test
     public void customMockerConfigurationApplied() throws IOException {
         jadlerRule.startMocker(new JadlerRule.JadlerConfigurationAdapter() {
-
-            @Override
-            public void configure(Jadler.OngoingConfiguration ongoingConfiguration) {
-                ongoingConfiguration.respondsWithDefaultStatus(HttpStatus.SC_CREATED);
-            }
-
             @Override
             public void configureMocker(HttpMocker mocker) {
                 mocker.onRequest()

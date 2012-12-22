@@ -25,27 +25,61 @@ public class JadlerRule extends ExternalResource {
     private final int mockerPort;
     private Jadler.OngoingConfiguration ongoingConfiguration;
     private HttpMocker httpMocker;
+    private final JadlerConfiguration commonConfiguration;
 
 
     /**
-     * Create rule that starts HttpMocker on random port.
-     * This is the most common (and useful) case.
+     * Builder for JadlerRule-s. If no attributes are explicitly set then create new JadlerRule
+     * which allocates random port for {@link HttpMocker} and uses no client specific configuration of HttpMocker
+     * for tests.
      */
-    public JadlerRule() {
-        this(-1);
-    }
+    public static class Builder {
+        private int mockerPort = -1;
+        private JadlerRule.JadlerConfiguration commonConfiguration;
 
+        /**
+         * Specifies explicit port for HttpMocker.
+         * In most cases, please, simply do not call this method and you'll get random free port.
+         * @param mockerPort
+         * @return
+         */
+        public Builder withMockerPort(int mockerPort) {
+            this.mockerPort = mockerPort;
+            return this;
+        }
+
+        /**
+         * Specifies common configuration shared by all (or the most of) tests. Use this method if you some part
+         * of your configuration for HttpMocker should be shared by all tests.
+         * <p>
+         *     Test specific configuration can still be performed when calling
+         *     {@link #startMocker(net.jadler.JadlerRule.JadlerConfiguration)}.
+         * </p>
+         * @param commonConfiguration configuration shared by all tests.
+         * @return
+         */
+        public Builder withCommonConfiguration(JadlerRule.JadlerConfiguration commonConfiguration) {
+            this.commonConfiguration = commonConfiguration;
+            return this;
+        }
+
+        public JadlerRule createJadlerRule() {
+            return new JadlerRule(mockerPort, commonConfiguration);
+        }
+    }
     /**
-     * Create rule that starts HttpMocker on passed {@code mockerPort}.
+     * Create rule that starts HttpMocker on passed {@code mockerPort} and configure it with (otpional)
+     * {@code commonConfiguration}
      * Please, consider using {@link #JadlerRule()} for starting mocker on random port instead!
      * @param mockerPort
      */
-    public JadlerRule(int mockerPort) {
+    private JadlerRule(int mockerPort, JadlerConfiguration commonConfiguration) {
         if (mockerPort <= 0) {
             this.mockerPort = portAllocator.allocatePort();
         } else {
             this.mockerPort = mockerPort;
         }
+        this.commonConfiguration = commonConfiguration;
     }
 
 
@@ -98,12 +132,23 @@ public class JadlerRule extends ExternalResource {
     }
 
     public void startMocker(JadlerConfiguration configurationCallback) {
+
+        if (commonConfiguration != null) {
+            // perform client specific COMMON configuration
+            commonConfiguration.configure(ongoingConfiguration);
+        }
+
         if (configurationCallback != null) {
             // perform client specific configuration
             configurationCallback.configure(ongoingConfiguration);
         }
 
         final HttpMocker mocker = ongoingConfiguration.build();
+
+        if (commonConfiguration != null) {
+            // perform client specific COMMON configuration
+            commonConfiguration.configureMocker(httpMocker);
+        }
 
         if (configurationCallback != null) {
             // perform client specific configuration
