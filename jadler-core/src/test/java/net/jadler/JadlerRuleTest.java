@@ -17,11 +17,12 @@ import static org.junit.Assert.fail;
 
 public class JadlerRuleTest {
 
-    private  static final int PORT = 31456;
+    private static final int PORT = 31456;
+    private static final String COMMON_RESOURCE_RESPONSE = "Common resource response";
+    private static final String COMMON_RESOURCE_URI = "/api/common";
+    private static final String PROJECTS_RESOURCE_URI = "/api/v1/projects";
+    private static final String PROJECTS_RESOURCE_RESPONSE = "My Projects";
 
-    /** DO NOTHING implementation for simple testing */
-    private static final JadlerRule.JadlerConfiguration configurationCallback =
-            new JadlerRule.JadlerConfigurationAdapter();
 
     @Rule
     public JadlerRule jadlerRuleForExplicitPort = new JadlerRule.Builder().withMockerPort(PORT).createJadlerRule();
@@ -33,53 +34,76 @@ public class JadlerRuleTest {
             ongoingConfiguration.respondsWithDefaultStatus(HttpStatus.SC_CREATED);
         }
     })
-    .createJadlerRule();
+            .createJadlerRule();
+
+
+    @Rule
+    public JadlerRule commonJadlerRule = new JadlerRule.Builder().withCommonConfiguration(new JadlerRule.JadlerConfigurationAdapter() {
+        @Override
+        public void configureMocker(HttpMocker mocker) {
+            mocker.onRequest().havingURIEqualTo(COMMON_RESOURCE_URI)
+                    .respond()
+                    .withBody(COMMON_RESOURCE_RESPONSE);
+        }
+    }).createJadlerRule();
 
 
     @Test
     public void bothMockersStartedInTestMethod() {
-        jadlerRule.startMocker(configurationCallback);
-        jadlerRuleForExplicitPort.startMocker(configurationCallback);
-
         checkMockerListeningOnPort(jadlerRule);
         checkMockerListeningOnPort(jadlerRuleForExplicitPort);
     }
 
     @Test
     public void randomPortMockerStartedInTestMethod() {
-        jadlerRule.startMocker(configurationCallback);
         checkMockerListeningOnPort(jadlerRule);
     }
 
 
     @Test
     public void explicitPortMockerStartedInTestMethod() {
-        jadlerRuleForExplicitPort.startMocker(configurationCallback);
         checkMockerListeningOnPort(jadlerRuleForExplicitPort);
     }
 
 
+    /**
+     * Tests if common configuration is applied before arbitrary test.
+     */
+    @Test
+    public void customConfigurationApplied() throws IOException {
+        checkMockerListeningOnPort(commonJadlerRule);
+        checkResponse(String.format("http://localhost:%s%s", commonJadlerRule.getMockerPort(), COMMON_RESOURCE_URI),
+                HttpStatus.SC_OK, COMMON_RESOURCE_RESPONSE);
+    }
+
+
+    /**
+     * Tests if configuration special for some test is applied properly.
+     */
     @Test
     public void customMockerConfigurationApplied() throws IOException {
-        jadlerRule.startMocker(new JadlerRule.JadlerConfigurationAdapter() {
+        jadlerRule.restartMocker(new JadlerRule.JadlerConfigurationAdapter() {
             @Override
             public void configureMocker(HttpMocker mocker) {
                 mocker.onRequest()
-                        .havingURIEqualTo("/api/v1/projects")
+                        .havingURIEqualTo(PROJECTS_RESOURCE_URI)
                         .respond()
-                        .withBody("My Projects");
+                        .withBody(PROJECTS_RESOURCE_RESPONSE);
             }
         });
 
         checkMockerListeningOnPort(jadlerRule);
 
-        final GetMethod httpMethod = new GetMethod(
-                String.format("http://localhost:%s/api/v1/projects", jadlerRule.getMockerPort()));
-        int status = new HttpClient().executeMethod(httpMethod);
-        assertThat(status, is(HttpStatus.SC_CREATED));
-        assertThat(httpMethod.getResponseBodyAsString(), is("My Projects"));
+        checkResponse(String.format("http://localhost:%s%s", jadlerRule.getMockerPort(), PROJECTS_RESOURCE_URI),
+                HttpStatus.SC_CREATED, PROJECTS_RESOURCE_RESPONSE);
     }
 
+    private void checkResponse(String uri, int expectedStatus, String expectedBody) throws IOException {
+        final GetMethod httpMethod = new GetMethod(uri);
+        int status = new HttpClient().executeMethod(httpMethod);
+        assertThat(status, is(expectedStatus));
+        assertThat(httpMethod.getResponseBodyAsString(), is(expectedBody));
+    }
 
 
     private void checkMockerListeningOnPort(JadlerRule jadler) {
